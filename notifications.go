@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -13,19 +14,29 @@ import (
 
 // NotificationService handles Pushover notifications
 type NotificationService struct {
-	config *NotificationConfig
+	config  *NotificationConfig
+	storage *StorageService
 }
 
 // NewNotificationService creates a new notification service
 func NewNotificationService() *NotificationService {
-	config := &NotificationConfig{
-		UserKey:  os.Getenv("PUSHOVER_USER_KEY"),
-		AppToken: os.Getenv("PUSHOVER_APP_TOKEN"),
-		Enabled:  os.Getenv("PUSHOVER_ENABLED") == "true",
+	storage := NewStorageService()
+
+	// Try to load config from storage first
+	config, err := storage.LoadNotificationConfig()
+	if err != nil {
+		log.Printf("Warning: Failed to load notification config from storage: %v", err)
+		// Fall back to environment variables
+		config = &NotificationConfig{
+			UserKey:  os.Getenv("PUSHOVER_USER_KEY"),
+			AppToken: os.Getenv("PUSHOVER_APP_TOKEN"),
+			Enabled:  os.Getenv("PUSHOVER_ENABLED") == "true",
+		}
 	}
 
 	return &NotificationService{
-		config: config,
+		config:  config,
+		storage: storage,
 	}
 }
 
@@ -37,6 +48,12 @@ func (n *NotificationService) UpdateConfig(c echo.Context) error {
 	}
 
 	n.config = &req
+
+	// Save to persistent storage
+	if err := n.storage.SaveNotificationConfig(&req); err != nil {
+		log.Printf("Warning: Failed to save notification config to storage: %v", err)
+	}
+
 	return c.JSON(http.StatusOK, map[string]string{"message": "Notification configuration updated"})
 }
 

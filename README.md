@@ -104,7 +104,13 @@ A full-stack uptime monitoring application built with Go and React. Gjallarhorn 
    docker-compose up -d
    ```
 
-3. **Access the application**:
+3. **Data Persistence**:
+   - Services and configuration are stored in `/data` inside the container
+   - Docker volume `gjallarhorn_data` is automatically created
+   - Data persists across container restarts and updates
+   - To backup: `docker run --rm -v gjallarhorn_data:/data -v $(pwd):/backup alpine tar czf /backup/gjallarhorn-backup.tar.gz -C /data .`
+
+4. **Access the application**:
    - Application: http://localhost:8080
 
 ## Configuration

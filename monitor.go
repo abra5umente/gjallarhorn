@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +19,7 @@ type MonitorService struct {
 	services map[string]*Service
 	mu       sync.RWMutex
 	client   *http.Client
+	storage  *StorageService
 }
 
 // NewMonitorService creates a new monitor service
@@ -30,10 +33,32 @@ func NewMonitorService() *MonitorService {
 		},
 	}
 
-	return &MonitorService{
-		services: make(map[string]*Service),
-		client:   client,
+	storage := NewStorageService()
+
+	// Load services from storage
+	services, err := storage.LoadServices()
+	if err != nil {
+		log.Printf("Warning: Failed to load services from storage: %v", err)
+		services = make(map[string]*Service)
 	}
+
+	return &MonitorService{
+		services: services,
+		client:   client,
+		storage:  storage,
+	}
+}
+
+// saveServices saves services to persistent storage
+func (m *MonitorService) saveServices() error {
+	m.mu.RLock()
+	services := make(map[string]*Service)
+	for k, v := range m.services {
+		services[k] = v
+	}
+	m.mu.RUnlock()
+
+	return m.storage.SaveServices(services)
 }
 
 // GetServices returns all monitored services
@@ -75,6 +100,11 @@ func (m *MonitorService) CreateService(c echo.Context) error {
 	m.services[service.ID] = service
 	m.mu.Unlock()
 
+	// Save to persistent storage
+	if err := m.saveServices(); err != nil {
+		log.Printf("Warning: Failed to save services to storage: %v", err)
+	}
+
 	return c.JSON(http.StatusCreated, service)
 }
 
@@ -107,6 +137,11 @@ func (m *MonitorService) UpdateService(c echo.Context) error {
 	service.Interval = req.Interval
 	service.UpdatedAt = time.Now()
 
+	// Save to persistent storage
+	if err := m.saveServices(); err != nil {
+		log.Printf("Warning: Failed to save services to storage: %v", err)
+	}
+
 	return c.JSON(http.StatusOK, service)
 }
 
@@ -125,6 +160,12 @@ func (m *MonitorService) DeleteService(c echo.Context) error {
 	}
 
 	delete(m.services, id)
+
+	// Save to persistent storage
+	if err := m.saveServices(); err != nil {
+		log.Printf("Warning: Failed to save services to storage: %v", err)
+	}
+
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -195,26 +236,42 @@ func (m *MonitorService) checkService(service *Service, notificationService *Not
 
 	req, err := http.NewRequestWithContext(ctx, "GET", service.URL, nil)
 	if err != nil {
+		log.Printf("Error creating request for %s (%s): %v", service.Name, service.URL, err)
 		m.updateServiceStatus(service, "offline", 0, err, notificationService)
 		return
 	}
 
 	req.Header.Set("User-Agent", "Gjallarhorn/1.0")
 
+	// Special handling for Plex
+	if strings.Contains(strings.ToLower(service.URL), "plex") {
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("X-Plex-Client-Identifier", "gjallarhorn-monitor")
+	}
+
 	resp, err := m.client.Do(req)
 	responseTime := time.Since(start).Milliseconds()
 
 	if err != nil {
+		log.Printf("Request failed for %s (%s): %v", service.Name, service.URL, err)
 		m.updateServiceStatus(service, "offline", responseTime, err, notificationService)
 		return
 	}
 	defer resp.Body.Close()
 
-	// Consider 2xx and 3xx status codes as healthy
-	if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+	// Log the response details for debugging
+	log.Printf("Service %s (%s): HTTP %d, Response time: %dms", service.Name, service.URL, resp.StatusCode, responseTime)
+
+	// Consider 2xx, 3xx, and 401 (unauthorized) as healthy
+	// 401 means the service is online but requires authentication
+	if (resp.StatusCode >= 200 && resp.StatusCode < 400) || resp.StatusCode == 401 {
+		if resp.StatusCode == 401 {
+			log.Printf("Service %s (%s): HTTP 401 (unauthorized) - marking as online", service.Name, service.URL)
+		}
 		m.updateServiceStatus(service, "online", responseTime, nil, notificationService)
 	} else {
 		err := fmt.Errorf("HTTP %d", resp.StatusCode)
+		log.Printf("Service %s (%s) marked as offline due to HTTP %d", service.Name, service.URL, resp.StatusCode)
 		m.updateServiceStatus(service, "offline", responseTime, err, notificationService)
 	}
 }
