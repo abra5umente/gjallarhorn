@@ -17,6 +17,8 @@ type Service struct {
 	// Downtime tracking
 	WentOfflineAt  *time.Time `json:"wentOfflineAt,omitempty"`  // When service first went offline
 	LastReminderAt *time.Time `json:"lastReminderAt,omitempty"` // When last reminder was sent
+	// Failure tracking
+	ConsecutiveFailures int `json:"consecutiveFailures"` // Number of consecutive failed checks
 }
 
 // ServiceStatus represents the current status of a service

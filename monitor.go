@@ -237,7 +237,7 @@ func (m *MonitorService) checkService(service *Service, notificationService *Not
 	req, err := http.NewRequestWithContext(ctx, "GET", service.URL, nil)
 	if err != nil {
 		log.Printf("Error creating request for %s (%s): %v", service.Name, service.URL, err)
-		m.updateServiceStatus(service, "offline", 0, err, notificationService)
+		m.updateServiceStatus(service, "failed", 0, err, notificationService)
 		return
 	}
 
@@ -254,7 +254,7 @@ func (m *MonitorService) checkService(service *Service, notificationService *Not
 
 	if err != nil {
 		log.Printf("Request failed for %s (%s): %v", service.Name, service.URL, err)
-		m.updateServiceStatus(service, "offline", responseTime, err, notificationService)
+		m.updateServiceStatus(service, "failed", responseTime, err, notificationService)
 		return
 	}
 	defer resp.Body.Close()
@@ -271,8 +271,8 @@ func (m *MonitorService) checkService(service *Service, notificationService *Not
 		m.updateServiceStatus(service, "online", responseTime, nil, notificationService)
 	} else {
 		err := fmt.Errorf("HTTP %d", resp.StatusCode)
-		log.Printf("Service %s (%s) marked as offline due to HTTP %d", service.Name, service.URL, resp.StatusCode)
-		m.updateServiceStatus(service, "offline", responseTime, err, notificationService)
+		log.Printf("Service %s (%s) failed with HTTP %d", service.Name, service.URL, resp.StatusCode)
+		m.updateServiceStatus(service, "failed", responseTime, err, notificationService)
 	}
 }
 
@@ -282,44 +282,64 @@ func (m *MonitorService) updateServiceStatus(service *Service, status string, re
 	defer m.mu.Unlock()
 
 	previousStatus := service.Status
-	service.Status = status
 	service.LastChecked = time.Now()
 
-	// Handle status changes
-	if previousStatus == "online" && status == "offline" {
-		// Service went offline - record the time and send initial notification
-		now := time.Now()
-		service.WentOfflineAt = &now
-		service.LastReminderAt = &now // Set initial reminder time
+	// Handle different status updates
+	if status == "online" {
+		// Service is healthy - reset failure counter and update status
+		service.ConsecutiveFailures = 0
 
-		errorMsg := ""
-		if err != nil {
-			errorMsg = err.Error()
-		}
-		notificationService.SendNotification(service, errorMsg)
-	} else if previousStatus == "offline" && status == "online" {
-		// Service came back online - send recovery notification and clear downtime tracking
-		var downtimeDuration string
-		if service.WentOfflineAt != nil {
-			duration := time.Now().Sub(*service.WentOfflineAt)
-			if duration.Hours() >= 24 {
-				days := int(duration.Hours() / 24)
-				downtimeDuration = fmt.Sprintf("%d day(s)", days)
-			} else if duration.Hours() >= 1 {
-				hours := int(duration.Hours())
-				downtimeDuration = fmt.Sprintf("%d hour(s)", hours)
-			} else {
-				minutes := int(duration.Minutes())
-				downtimeDuration = fmt.Sprintf("%d minute(s)", minutes)
+		if previousStatus == "offline" {
+			// Service came back online - send recovery notification and clear downtime tracking
+			var downtimeDuration string
+			if service.WentOfflineAt != nil {
+				duration := time.Since(*service.WentOfflineAt)
+				if duration.Hours() >= 24 {
+					days := int(duration.Hours() / 24)
+					downtimeDuration = fmt.Sprintf("%d day(s)", days)
+				} else if duration.Hours() >= 1 {
+					hours := int(duration.Hours())
+					downtimeDuration = fmt.Sprintf("%d hour(s)", hours)
+				} else {
+					minutes := int(duration.Minutes())
+					downtimeDuration = fmt.Sprintf("%d minute(s)", minutes)
+				}
 			}
+
+			// Send recovery notification
+			notificationService.SendRecoveryNotification(service, downtimeDuration)
+
+			// Clear downtime tracking
+			service.WentOfflineAt = nil
+			service.LastReminderAt = nil
 		}
 
-		// Send recovery notification
-		notificationService.SendRecoveryNotification(service, downtimeDuration)
+		service.Status = "online"
 
-		// Clear downtime tracking
-		service.WentOfflineAt = nil
-		service.LastReminderAt = nil
+	} else if status == "failed" {
+		// Service check failed - increment failure counter
+		service.ConsecutiveFailures++
+		log.Printf("Service %s (%s): Consecutive failures: %d/3", service.Name, service.URL, service.ConsecutiveFailures)
+
+		// Only mark as offline after 3 consecutive failures
+		if service.ConsecutiveFailures >= 3 {
+			if previousStatus != "offline" {
+				// Service just went offline - record the time and send initial notification
+				now := time.Now()
+				service.WentOfflineAt = &now
+				service.LastReminderAt = &now // Set initial reminder time
+
+				errorMsg := ""
+				if err != nil {
+					errorMsg = err.Error()
+				}
+				notificationService.SendNotification(service, errorMsg)
+			}
+			service.Status = "offline"
+		} else {
+			// Still within failure threshold - keep as online but log the failure
+			service.Status = "online"
+		}
 	}
 }
 
