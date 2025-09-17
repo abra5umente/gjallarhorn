@@ -1,5 +1,7 @@
+# syntax=docker/dockerfile:1.4
+
 # Multi-stage build for Gjallarhorn
-FROM node:18-alpine AS frontend-builder
+FROM --platform=$BUILDPLATFORM node:18-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
@@ -14,7 +16,10 @@ COPY . .
 RUN npm run build
 
 # Go build stage
-FROM golang:1.21-alpine AS backend-builder
+FROM --platform=$BUILDPLATFORM golang:1.21-alpine AS backend-builder
+
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /app
 
@@ -33,11 +38,11 @@ COPY . .
 # Copy built frontend from previous stage
 COPY --from=frontend-builder /app/frontend/dist ./dist
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
+# Build the application for the target platform
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -a -installsuffix cgo -o main .
 
 # Final stage
-FROM alpine:latest
+FROM --platform=$TARGETPLATFORM alpine:latest
 
 # Install ca-certificates for HTTPS requests
 RUN apk --no-cache add ca-certificates tzdata

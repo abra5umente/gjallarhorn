@@ -17,14 +17,14 @@ type StorageService struct {
 // NewStorageService creates a new storage service
 func NewStorageService() *StorageService {
 	return &StorageService{
-		servicesFile: "data/services.json",
-		configFile:   "data/config.json",
+		servicesFile: "/data/services.json",
+		configFile:   "/data/config.json",
 	}
 }
 
 // ensureDataDir creates the data directory if it doesn't exist
 func (s *StorageService) ensureDataDir() error {
-	return os.MkdirAll("data", 0755)
+	return os.MkdirAll("/data", 0755)
 }
 
 // SaveServices saves services to persistent storage

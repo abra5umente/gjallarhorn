@@ -125,10 +125,9 @@ func (m *MonitorService) UpdateService(c echo.Context) error {
 	}
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	service, exists := m.services[id]
 	if !exists {
+		m.mu.Unlock()
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "service not found"})
 	}
 
@@ -136,6 +135,7 @@ func (m *MonitorService) UpdateService(c echo.Context) error {
 	service.URL = req.URL
 	service.Interval = req.Interval
 	service.UpdatedAt = time.Now()
+	m.mu.Unlock()
 
 	// Save to persistent storage
 	if err := m.saveServices(); err != nil {
@@ -153,13 +153,13 @@ func (m *MonitorService) DeleteService(c echo.Context) error {
 	}
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	if _, exists := m.services[id]; !exists {
+		m.mu.Unlock()
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "service not found"})
 	}
 
 	delete(m.services, id)
+	m.mu.Unlock()
 
 	// Save to persistent storage
 	if err := m.saveServices(); err != nil {
