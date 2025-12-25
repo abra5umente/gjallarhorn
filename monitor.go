@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +15,20 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
+
+// getCheckInterval returns the health check interval from env or default 60s
+func getCheckInterval() time.Duration {
+	intervalStr := os.Getenv("CHECK_INTERVAL")
+	if intervalStr == "" {
+		return 60 * time.Second
+	}
+	interval, err := strconv.Atoi(intervalStr)
+	if err != nil || interval < 1 {
+		log.Printf("Invalid CHECK_INTERVAL '%s', using default 60 seconds", intervalStr)
+		return 60 * time.Second
+	}
+	return time.Duration(interval) * time.Second
+}
 
 // MonitorService handles service monitoring operations
 type MonitorService struct {
@@ -62,6 +78,12 @@ func (m *MonitorService) saveServices() error {
 }
 
 // GetServices returns all monitored services
+// @Summary Get all services
+// @Description Returns a list of all monitored services
+// @Tags Services
+// @Produce json
+// @Success 200 {array} Service
+// @Router /services [get]
 func (m *MonitorService) GetServices(c echo.Context) error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -75,6 +97,15 @@ func (m *MonitorService) GetServices(c echo.Context) error {
 }
 
 // CreateService creates a new monitored service
+// @Summary Create a service
+// @Description Creates a new service to monitor
+// @Tags Services
+// @Accept json
+// @Produce json
+// @Param service body CreateServiceRequest true "Service to create"
+// @Success 201 {object} Service
+// @Failure 400 {object} map[string]string
+// @Router /services [post]
 func (m *MonitorService) CreateService(c echo.Context) error {
 	var req CreateServiceRequest
 	if err := c.Bind(&req); err != nil {
@@ -109,6 +140,17 @@ func (m *MonitorService) CreateService(c echo.Context) error {
 }
 
 // UpdateService updates an existing service
+// @Summary Update a service
+// @Description Updates an existing monitored service
+// @Tags Services
+// @Accept json
+// @Produce json
+// @Param id path string true "Service ID"
+// @Param service body UpdateServiceRequest true "Service to update"
+// @Success 200 {object} Service
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /services/{id} [put]
 func (m *MonitorService) UpdateService(c echo.Context) error {
 	id := c.Param("id")
 	if id == "" {
@@ -146,6 +188,14 @@ func (m *MonitorService) UpdateService(c echo.Context) error {
 }
 
 // DeleteService deletes a service
+// @Summary Delete a service
+// @Description Deletes a monitored service
+// @Tags Services
+// @Param id path string true "Service ID"
+// @Success 204
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /services/{id} [delete]
 func (m *MonitorService) DeleteService(c echo.Context) error {
 	id := c.Param("id")
 	if id == "" {
@@ -170,6 +220,15 @@ func (m *MonitorService) DeleteService(c echo.Context) error {
 }
 
 // GetServiceStatus returns the current status of a service
+// @Summary Get service status
+// @Description Returns the current status of a specific service
+// @Tags Services
+// @Produce json
+// @Param id path string true "Service ID"
+// @Success 200 {object} ServiceStatus
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /services/{id}/status [get]
 func (m *MonitorService) GetServiceStatus(c echo.Context) error {
 	id := c.Param("id")
 	if id == "" {
@@ -193,10 +252,184 @@ func (m *MonitorService) GetServiceStatus(c echo.Context) error {
 	return c.JSON(http.StatusOK, status)
 }
 
+// BulkCreateServices creates multiple services atomically
+// @Summary Bulk create services
+// @Description Creates multiple services in a single atomic operation
+// @Tags Bulk Operations
+// @Accept json
+// @Produce json
+// @Param services body BulkCreateServiceRequest true "Services to create"
+// @Success 201 {object} BulkOperationResponse
+// @Failure 400 {object} map[string]string
+// @Router /services/bulk [post]
+func (m *MonitorService) BulkCreateServices(c echo.Context) error {
+	var req BulkCreateServiceRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format: " + err.Error()})
+	}
+
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Validation failed: " + err.Error()})
+	}
+
+	// Create all services
+	newServices := make([]*Service, 0, len(req.Services))
+	now := time.Now()
+	for _, svcReq := range req.Services {
+		service := &Service{
+			ID:          uuid.New().String(),
+			Name:        svcReq.Name,
+			URL:         svcReq.URL,
+			Interval:    svcReq.Interval,
+			Status:      "unknown",
+			LastChecked: time.Time{},
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		}
+		newServices = append(newServices, service)
+	}
+
+	// Apply atomically
+	m.mu.Lock()
+	for _, service := range newServices {
+		m.services[service.ID] = service
+	}
+	m.mu.Unlock()
+
+	if err := m.saveServices(); err != nil {
+		log.Printf("Warning: Failed to save services to storage: %v", err)
+	}
+
+	return c.JSON(http.StatusCreated, BulkOperationResponse{
+		Success:  true,
+		Count:    len(newServices),
+		Services: newServices,
+	})
+}
+
+// BulkUpdateServices updates multiple services atomically
+// @Summary Bulk update services
+// @Description Updates multiple services in a single atomic operation
+// @Tags Bulk Operations
+// @Accept json
+// @Produce json
+// @Param services body BulkUpdateServiceRequest true "Services to update"
+// @Success 200 {object} BulkOperationResponse
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]interface{}
+// @Router /services/bulk [put]
+func (m *MonitorService) BulkUpdateServices(c echo.Context) error {
+	var req BulkUpdateServiceRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format: " + err.Error()})
+	}
+
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Validation failed: " + err.Error()})
+	}
+
+	// Validate all IDs exist first (read lock)
+	m.mu.RLock()
+	var missingIDs []string
+	for _, svcReq := range req.Services {
+		if _, exists := m.services[svcReq.ID]; !exists {
+			missingIDs = append(missingIDs, svcReq.ID)
+		}
+	}
+	m.mu.RUnlock()
+
+	if len(missingIDs) > 0 {
+		return c.JSON(http.StatusNotFound, map[string]interface{}{
+			"error":       "Some services not found",
+			"missing_ids": missingIDs,
+		})
+	}
+
+	// Apply updates atomically
+	updatedServices := make([]*Service, 0, len(req.Services))
+	m.mu.Lock()
+	now := time.Now()
+	for _, svcReq := range req.Services {
+		service := m.services[svcReq.ID]
+		service.Name = svcReq.Name
+		service.URL = svcReq.URL
+		service.Interval = svcReq.Interval
+		service.UpdatedAt = now
+		updatedServices = append(updatedServices, service)
+	}
+	m.mu.Unlock()
+
+	if err := m.saveServices(); err != nil {
+		log.Printf("Warning: Failed to save services to storage: %v", err)
+	}
+
+	return c.JSON(http.StatusOK, BulkOperationResponse{
+		Success:  true,
+		Count:    len(updatedServices),
+		Services: updatedServices,
+	})
+}
+
+// BulkDeleteServices deletes multiple services atomically
+// @Summary Bulk delete services
+// @Description Deletes multiple services in a single atomic operation
+// @Tags Bulk Operations
+// @Accept json
+// @Produce json
+// @Param ids body BulkDeleteServiceRequest true "Service IDs to delete"
+// @Success 200 {object} BulkOperationResponse
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]interface{}
+// @Router /services/bulk [delete]
+func (m *MonitorService) BulkDeleteServices(c echo.Context) error {
+	var req BulkDeleteServiceRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request format: " + err.Error()})
+	}
+
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Validation failed: " + err.Error()})
+	}
+
+	// Validate all IDs exist first
+	m.mu.RLock()
+	var missingIDs []string
+	for _, id := range req.IDs {
+		if _, exists := m.services[id]; !exists {
+			missingIDs = append(missingIDs, id)
+		}
+	}
+	m.mu.RUnlock()
+
+	if len(missingIDs) > 0 {
+		return c.JSON(http.StatusNotFound, map[string]interface{}{
+			"error":       "Some services not found",
+			"missing_ids": missingIDs,
+		})
+	}
+
+	// Delete atomically
+	m.mu.Lock()
+	for _, id := range req.IDs {
+		delete(m.services, id)
+	}
+	m.mu.Unlock()
+
+	if err := m.saveServices(); err != nil {
+		log.Printf("Warning: Failed to save services to storage: %v", err)
+	}
+
+	return c.JSON(http.StatusOK, BulkOperationResponse{
+		Success: true,
+		Count:   len(req.IDs),
+	})
+}
+
 // StartMonitoring starts the background monitoring process
 func (m *MonitorService) StartMonitoring(notificationService *NotificationService) {
-	// Service health check ticker (every 10 seconds)
-	healthTicker := time.NewTicker(10 * time.Second)
+	checkInterval := getCheckInterval()
+	log.Printf("Starting health check monitoring with interval: %v", checkInterval)
+	healthTicker := time.NewTicker(checkInterval)
 	defer healthTicker.Stop()
 
 	// Reminder check ticker (every hour)
