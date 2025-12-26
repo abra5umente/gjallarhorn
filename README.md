@@ -16,7 +16,7 @@ A full-stack uptime monitoring application built with Go and React. Gjallarhorn 
 
 - **Backend**: Go with Echo framework
 - **Frontend**: React with Vite and TailwindCSS
-- **Database**: In-memory (services stored in memory)
+- **Storage**: JSON file persistence to `/data` directory
 - **Notifications**: Pushover API integration
 - **Deployment**: Single binary with embedded frontend
 
@@ -108,6 +108,7 @@ A full-stack uptime monitoring application built with Go and React. Gjallarhorn 
    - Services and configuration are stored in `/data` inside the container
    - Docker volume `gjallarhorn_data` is automatically created
    - Data persists across container restarts and updates
+   - To use a bind mount instead: `-v /path/on/host:/data` (note: mount to `/data`, not `/root/data`)
    - To backup: `docker run --rm -v gjallarhorn_data:/data -v $(pwd):/backup alpine tar czf /backup/gjallarhorn-backup.tar.gz -C /data .`
 
 4. **Access the application**:
@@ -120,6 +121,8 @@ A full-stack uptime monitoring application built with Go and React. Gjallarhorn 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `PORT` | Server port | `8080` |
+| `CHECK_INTERVAL` | Health check interval in seconds | `60` |
+| `SKIP_TLS_VERIFY` | Skip TLS cert verification (for self-signed certs) | `false` |
 | `PUSHOVER_USER_KEY` | Your Pushover user key | - |
 | `PUSHOVER_APP_TOKEN` | Your Pushover app token | - |
 | `PUSHOVER_ENABLED` | Enable Pushover notifications | `false` |
@@ -133,6 +136,8 @@ A full-stack uptime monitoring application built with Go and React. Gjallarhorn 
 
 ## API Endpoints
 
+Interactive API documentation available at `/swagger/index.html` when running.
+
 ### Services
 
 - `GET /api/services` - List all services
@@ -140,6 +145,12 @@ A full-stack uptime monitoring application built with Go and React. Gjallarhorn 
 - `PUT /api/services/:id` - Update a service
 - `DELETE /api/services/:id` - Delete a service
 - `GET /api/services/:id/status` - Get service status
+
+### Bulk Operations
+
+- `POST /api/services/bulk` - Create multiple services (all-or-nothing)
+- `PUT /api/services/bulk` - Update multiple services (all-or-nothing)
+- `DELETE /api/services/bulk` - Delete multiple services (all-or-nothing)
 
 ### Notifications
 
@@ -213,9 +224,9 @@ GOOS=darwin GOARCH=arm64 go build -o gjallarhorn-darwin-arm64 .
 The application includes health checks and monitoring:
 
 - **Health Check**: `GET /api/services` (used by Docker health check)
-- **Service Status**: Real-time status updates every 10 seconds
+- **Service Status**: UI auto-refreshes every 30 seconds
+- **Failure Threshold**: Services marked offline after 3 consecutive failures
 - **Error Handling**: Comprehensive error handling and logging
-- **Graceful Shutdown**: Proper cleanup on application shutdown
 
 ## Troubleshooting
 

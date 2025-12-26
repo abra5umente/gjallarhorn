@@ -7,6 +7,8 @@ services:
       - "8080:8080"
     environment:
       - PORT=8080
+      - CHECK_INTERVAL=${CHECK_INTERVAL:-60}
+      - SKIP_TLS_VERIFY=${SKIP_TLS_VERIFY:-false}
       - PUSHOVER_USER_KEY=${PUSHOVER_USER_KEY}
       - PUSHOVER_APP_TOKEN=${PUSHOVER_APP_TOKEN}
       - PUSHOVER_ENABLED=${PUSHOVER_ENABLED:-false}
