@@ -62,7 +62,7 @@ type UpdateServiceRequest struct {
 
 // BulkCreateServiceRequest represents a request to create multiple services
 type BulkCreateServiceRequest struct {
-	Services []CreateServiceRequest `json:"services" validate:"required,min=1,dive"`
+	Services []CreateServiceRequest `json:"services" validate:"required,min=1,max=100,dive"`
 }
 
 // BulkUpdateServiceItem represents a single service update in a bulk request
@@ -75,12 +75,12 @@ type BulkUpdateServiceItem struct {
 
 // BulkUpdateServiceRequest represents a request to update multiple services
 type BulkUpdateServiceRequest struct {
-	Services []BulkUpdateServiceItem `json:"services" validate:"required,min=1,dive"`
+	Services []BulkUpdateServiceItem `json:"services" validate:"required,min=1,max=100,dive"`
 }
 
 // BulkDeleteServiceRequest represents a request to delete multiple services
 type BulkDeleteServiceRequest struct {
-	IDs []string `json:"ids" validate:"required,min=1"`
+	IDs []string `json:"ids" validate:"required,min=1,max=100"`
 }
 
 // BulkOperationResponse represents the response for bulk operations

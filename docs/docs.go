@@ -373,6 +373,7 @@ const docTemplate = `{
             "properties": {
                 "services": {
                     "type": "array",
+                    "maxItems": 100,
                     "minItems": 1,
                     "items": {
                         "$ref": "#/definitions/main.CreateServiceRequest"
@@ -388,6 +389,7 @@ const docTemplate = `{
             "properties": {
                 "ids": {
                     "type": "array",
+                    "maxItems": 100,
                     "minItems": 1,
                     "items": {
                         "type": "string"
@@ -447,6 +449,7 @@ const docTemplate = `{
             "properties": {
                 "services": {
                     "type": "array",
+                    "maxItems": 100,
                     "minItems": 1,
                     "items": {
                         "$ref": "#/definitions/main.BulkUpdateServiceItem"

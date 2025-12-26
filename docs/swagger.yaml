@@ -5,6 +5,7 @@ definitions:
       services:
         items:
           $ref: '#/definitions/main.CreateServiceRequest'
+        maxItems: 100
         minItems: 1
         type: array
     required:
@@ -15,6 +16,7 @@ definitions:
       ids:
         items:
           type: string
+        maxItems: 100
         minItems: 1
         type: array
     required:
@@ -56,6 +58,7 @@ definitions:
       services:
         items:
           $ref: '#/definitions/main.BulkUpdateServiceItem'
+        maxItems: 100
         minItems: 1
         type: array
     required:

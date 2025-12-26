@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useServices } from '../context/ServiceContext'
 
 const BulkEditModal = ({ isOpen, onClose }) => {
@@ -6,6 +6,14 @@ const BulkEditModal = ({ isOpen, onClose }) => {
   const [interval, setInterval] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  // Reset form state when modal opens/closes
+  useEffect(() => {
+    if (isOpen) {
+      setInterval('')
+      setError('')
+    }
+  }, [isOpen])
 
   if (!isOpen) return null
 

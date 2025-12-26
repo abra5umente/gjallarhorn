@@ -32,12 +32,8 @@ export const NotificationProvider = ({ children }) => {
   }
 
   const updateConfig = async (newConfig) => {
-    try {
-      await api.updateNotificationConfig(newConfig)
-      setConfig(newConfig)
-    } catch (err) {
-      throw err
-    }
+    await api.updateNotificationConfig(newConfig)
+    setConfig(newConfig)
   }
 
   useEffect(() => {

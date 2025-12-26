@@ -100,7 +100,7 @@ export const ServiceProvider = ({ children }) => {
   const bulkDeleteServices = async (ids) => {
     try {
       await api.bulkDelete(ids)
-      setServices(prev => prev.filter(s => !ids.includes(s.id)))
+      await fetchServices()
       clearSelection()
     } catch (err) {
       setError(err.message)

@@ -304,19 +304,21 @@ func (m *MonitorService) BulkCreateServices(c echo.Context) error {
 		newServices = append(newServices, service)
 	}
 
-	// Apply atomically
+	// Apply atomically - hold lock through save to prevent race with checkService
 	m.mu.Lock()
 	for _, service := range newServices {
 		m.services[service.ID] = service
 	}
-	m.mu.Unlock()
 
-	if err := m.saveServices(); err != nil {
+	// Save while still holding lock to prevent race conditions
+	if err := m.saveServicesLocked(); err != nil {
+		m.mu.Unlock()
 		log.Printf("Error: Failed to save services to storage: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Services created but failed to persist: " + err.Error(),
 		})
 	}
+	m.mu.Unlock()
 
 	return c.JSON(http.StatusCreated, BulkOperationResponse{
 		Success:  true,
