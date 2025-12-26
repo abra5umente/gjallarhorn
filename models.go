@@ -49,14 +49,14 @@ type NotificationConfig struct {
 // CreateServiceRequest represents the request to create a new service
 type CreateServiceRequest struct {
 	Name     string `json:"name" validate:"required,min=1,max=100"`
-	URL      string `json:"url" validate:"required,url"`
+	URL      string `json:"url" validate:"required,httpurl,max=2048"`
 	Interval int    `json:"interval" validate:"required,min=30,max=3600"`
 }
 
 // UpdateServiceRequest represents the request to update a service
 type UpdateServiceRequest struct {
 	Name     string `json:"name" validate:"required,min=1,max=100"`
-	URL      string `json:"url" validate:"required,url"`
+	URL      string `json:"url" validate:"required,httpurl,max=2048"`
 	Interval int    `json:"interval" validate:"required,min=30,max=3600"`
 }
 
@@ -69,7 +69,7 @@ type BulkCreateServiceRequest struct {
 type BulkUpdateServiceItem struct {
 	ID       string `json:"id" validate:"required"`
 	Name     string `json:"name" validate:"required,min=1,max=100"`
-	URL      string `json:"url" validate:"required,url"`
+	URL      string `json:"url" validate:"required,httpurl,max=2048"`
 	Interval int    `json:"interval" validate:"required,min=30,max=3600"`
 }
 

@@ -437,7 +437,8 @@ const docTemplate = `{
                     "minLength": 1
                 },
                 "url": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 2048
                 }
             }
         },
@@ -476,7 +477,8 @@ const docTemplate = `{
                     "minLength": 1
                 },
                 "url": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 2048
                 }
             }
         },
@@ -563,7 +565,8 @@ const docTemplate = `{
                     "minLength": 1
                 },
                 "url": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 2048
                 }
             }
         }

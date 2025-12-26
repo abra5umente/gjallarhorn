@@ -312,10 +312,14 @@ func (m *MonitorService) BulkCreateServices(c echo.Context) error {
 
 	// Save while still holding lock to prevent race conditions
 	if err := m.saveServicesLocked(); err != nil {
+		// Rollback: remove the services we just added
+		for _, service := range newServices {
+			delete(m.services, service.ID)
+		}
 		m.mu.Unlock()
 		log.Printf("Error: Failed to save services to storage: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "Services created but failed to persist: " + err.Error(),
+			"error": "Failed to persist services: " + err.Error(),
 		})
 	}
 	m.mu.Unlock()
@@ -367,6 +371,26 @@ func (m *MonitorService) BulkUpdateServices(c echo.Context) error {
 
 	// Apply updates atomically - hold lock through save to prevent race with checkService
 	m.mu.Lock()
+
+	// Store original values for rollback
+	type originalValues struct {
+		Name      string
+		URL       string
+		Interval  int
+		UpdatedAt time.Time
+	}
+	originals := make(map[string]originalValues)
+	for _, svcReq := range req.Services {
+		service := m.services[svcReq.ID]
+		originals[svcReq.ID] = originalValues{
+			Name:      service.Name,
+			URL:       service.URL,
+			Interval:  service.Interval,
+			UpdatedAt: service.UpdatedAt,
+		}
+	}
+
+	// Apply updates
 	updatedServices := make([]*Service, 0, len(req.Services))
 	now := time.Now()
 	for _, svcReq := range req.Services {
@@ -380,10 +404,18 @@ func (m *MonitorService) BulkUpdateServices(c echo.Context) error {
 
 	// Save while still holding lock to prevent race conditions
 	if err := m.saveServicesLocked(); err != nil {
+		// Rollback: restore original values
+		for id, orig := range originals {
+			service := m.services[id]
+			service.Name = orig.Name
+			service.URL = orig.URL
+			service.Interval = orig.Interval
+			service.UpdatedAt = orig.UpdatedAt
+		}
 		m.mu.Unlock()
 		log.Printf("Error: Failed to save services to storage: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "Services updated but failed to persist: " + err.Error(),
+			"error": "Failed to persist updates: " + err.Error(),
 		})
 	}
 	m.mu.Unlock()
@@ -435,15 +467,23 @@ func (m *MonitorService) BulkDeleteServices(c echo.Context) error {
 
 	// Delete atomically - hold lock through save
 	m.mu.Lock()
+
+	// Store services for rollback
+	deletedServices := make(map[string]*Service)
 	for _, id := range req.IDs {
+		deletedServices[id] = m.services[id]
 		delete(m.services, id)
 	}
 
 	if err := m.saveServicesLocked(); err != nil {
+		// Rollback: restore deleted services
+		for id, service := range deletedServices {
+			m.services[id] = service
+		}
 		m.mu.Unlock()
 		log.Printf("Error: Failed to save services to storage: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "Services deleted but failed to persist: " + err.Error(),
+			"error": "Failed to persist deletions: " + err.Error(),
 		})
 	}
 	m.mu.Unlock()
@@ -556,10 +596,10 @@ func (m *MonitorService) checkService(service *Service, notificationService *Not
 // updateServiceStatus updates the service status and sends notifications if needed
 func (m *MonitorService) updateServiceStatus(service *Service, status string, responseTime int64, err error, notificationService *NotificationService) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	previousStatus := service.Status
 	service.LastChecked = time.Now()
+	statusChanged := false
 
 	// Handle different status updates
 	if status == "online" {
@@ -589,6 +629,7 @@ func (m *MonitorService) updateServiceStatus(service *Service, status string, re
 			// Clear downtime tracking
 			service.WentOfflineAt = nil
 			service.LastReminderAt = nil
+			statusChanged = true
 		}
 
 		service.Status = "online"
@@ -611,6 +652,7 @@ func (m *MonitorService) updateServiceStatus(service *Service, status string, re
 					errorMsg = err.Error()
 				}
 				notificationService.SendNotification(service, errorMsg)
+				statusChanged = true
 			}
 			service.Status = "offline"
 		} else {
@@ -618,6 +660,15 @@ func (m *MonitorService) updateServiceStatus(service *Service, status string, re
 			service.Status = "online"
 		}
 	}
+
+	// Persist status changes to survive restarts
+	if statusChanged {
+		if err := m.saveServicesLocked(); err != nil {
+			log.Printf("Warning: Failed to persist status change for %s: %v", service.Name, err)
+		}
+	}
+
+	m.mu.Unlock()
 }
 
 // checkReminders checks for services that have been down for over an hour and sends reminder notifications

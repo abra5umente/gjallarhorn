@@ -4,6 +4,7 @@ import (
 	"embed"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -39,9 +40,23 @@ func main() {
 	// Initialize Echo
 	e := echo.New()
 
-	// Initialize validator
-	validator := validator.New()
-	e.Validator = &CustomValidator{validator: validator}
+	// Initialize validator with custom validations
+	v := validator.New()
+
+	// Register custom validator for HTTP/HTTPS URLs only
+	v.RegisterValidation("httpurl", func(fl validator.FieldLevel) bool {
+		urlStr := fl.Field().String()
+		if urlStr == "" {
+			return false
+		}
+		u, err := url.Parse(urlStr)
+		if err != nil {
+			return false
+		}
+		return u.Scheme == "http" || u.Scheme == "https"
+	})
+
+	e.Validator = &CustomValidator{validator: v}
 
 	// Middleware
 	e.Use(middleware.Logger())

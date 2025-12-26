@@ -431,7 +431,8 @@
                     "minLength": 1
                 },
                 "url": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 2048
                 }
             }
         },
@@ -470,7 +471,8 @@
                     "minLength": 1
                 },
                 "url": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 2048
                 }
             }
         },
@@ -557,7 +559,8 @@
                     "minLength": 1
                 },
                 "url": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 2048
                 }
             }
         }
