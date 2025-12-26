@@ -26,6 +26,14 @@ npm install
 echo "🎨 Building frontend..."
 npm run build
 
+# Generate Swagger documentation
+echo "📚 Generating API documentation..."
+if command -v swag &> /dev/null; then
+    swag init
+else
+    echo "⚠️  swag not found, skipping API docs. Install with: go install github.com/swaggo/swag/cmd/swag@latest"
+fi
+
 # Build backend with embedded frontend
 echo "🔧 Building Go backend..."
 CGO_ENABLED=0 go build -a -installsuffix cgo -o gjallarhorn .

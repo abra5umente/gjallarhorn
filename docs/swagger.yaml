@@ -1,0 +1,392 @@
+basePath: /api
+definitions:
+  main.BulkCreateServiceRequest:
+    properties:
+      services:
+        items:
+          $ref: '#/definitions/main.CreateServiceRequest'
+        maxItems: 100
+        minItems: 1
+        type: array
+    required:
+    - services
+    type: object
+  main.BulkDeleteServiceRequest:
+    properties:
+      ids:
+        items:
+          type: string
+        maxItems: 100
+        minItems: 1
+        type: array
+    required:
+    - ids
+    type: object
+  main.BulkOperationResponse:
+    properties:
+      count:
+        type: integer
+      services:
+        items:
+          $ref: '#/definitions/main.Service'
+        type: array
+      success:
+        type: boolean
+    type: object
+  main.BulkUpdateServiceItem:
+    properties:
+      id:
+        type: string
+      interval:
+        maximum: 3600
+        minimum: 30
+        type: integer
+      name:
+        maxLength: 100
+        minLength: 1
+        type: string
+      url:
+        maxLength: 2048
+        type: string
+    required:
+    - id
+    - interval
+    - name
+    - url
+    type: object
+  main.BulkUpdateServiceRequest:
+    properties:
+      services:
+        items:
+          $ref: '#/definitions/main.BulkUpdateServiceItem'
+        maxItems: 100
+        minItems: 1
+        type: array
+    required:
+    - services
+    type: object
+  main.CreateServiceRequest:
+    properties:
+      interval:
+        maximum: 3600
+        minimum: 30
+        type: integer
+      name:
+        maxLength: 100
+        minLength: 1
+        type: string
+      url:
+        maxLength: 2048
+        type: string
+    required:
+    - interval
+    - name
+    - url
+    type: object
+  main.Service:
+    properties:
+      consecutiveFailures:
+        description: Failure tracking
+        type: integer
+      createdAt:
+        type: string
+      id:
+        type: string
+      interval:
+        description: in seconds
+        type: integer
+      lastChecked:
+        type: string
+      lastReminderAt:
+        description: When last reminder was sent
+        type: string
+      name:
+        type: string
+      status:
+        description: '"online", "offline", "unknown"'
+        type: string
+      updatedAt:
+        type: string
+      url:
+        type: string
+      wentOfflineAt:
+        description: Downtime tracking
+        type: string
+    type: object
+  main.ServiceStatus:
+    properties:
+      error:
+        type: string
+      lastChecked:
+        type: string
+      responseTime:
+        description: in milliseconds
+        type: integer
+      serviceId:
+        type: string
+      status:
+        type: string
+    type: object
+  main.UpdateServiceRequest:
+    properties:
+      interval:
+        maximum: 3600
+        minimum: 30
+        type: integer
+      name:
+        maxLength: 100
+        minLength: 1
+        type: string
+      url:
+        maxLength: 2048
+        type: string
+    required:
+    - interval
+    - name
+    - url
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: Uptime monitoring service API
+  title: Gjallarhorn API
+  version: "1.0"
+paths:
+  /services:
+    get:
+      description: Returns a list of all monitored services
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/main.Service'
+            type: array
+      summary: Get all services
+      tags:
+      - Services
+    post:
+      consumes:
+      - application/json
+      description: Creates a new service to monitor
+      parameters:
+      - description: Service to create
+        in: body
+        name: service
+        required: true
+        schema:
+          $ref: '#/definitions/main.CreateServiceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/main.Service'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create a service
+      tags:
+      - Services
+  /services/{id}:
+    delete:
+      description: Deletes a monitored service
+      parameters:
+      - description: Service ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Delete a service
+      tags:
+      - Services
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing monitored service
+      parameters:
+      - description: Service ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Service to update
+        in: body
+        name: service
+        required: true
+        schema:
+          $ref: '#/definitions/main.UpdateServiceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Service'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update a service
+      tags:
+      - Services
+  /services/{id}/status:
+    get:
+      description: Returns the current status of a specific service
+      parameters:
+      - description: Service ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.ServiceStatus'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get service status
+      tags:
+      - Services
+  /services/bulk:
+    delete:
+      consumes:
+      - application/json
+      description: Deletes multiple services in a single atomic operation
+      parameters:
+      - description: Service IDs to delete
+        in: body
+        name: ids
+        required: true
+        schema:
+          $ref: '#/definitions/main.BulkDeleteServiceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.BulkOperationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Bulk delete services
+      tags:
+      - Bulk Operations
+    post:
+      consumes:
+      - application/json
+      description: Creates multiple services in a single atomic operation
+      parameters:
+      - description: Services to create
+        in: body
+        name: services
+        required: true
+        schema:
+          $ref: '#/definitions/main.BulkCreateServiceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/main.BulkOperationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Bulk create services
+      tags:
+      - Bulk Operations
+    put:
+      consumes:
+      - application/json
+      description: Updates multiple services in a single atomic operation
+      parameters:
+      - description: Services to update
+        in: body
+        name: services
+        required: true
+        schema:
+          $ref: '#/definitions/main.BulkUpdateServiceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.BulkOperationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Bulk update services
+      tags:
+      - Bulk Operations
+swagger: "2.0"
+tags:
+- description: Service monitoring operations
+  name: Services
+- description: Bulk service operations with all-or-nothing semantics
+  name: Bulk Operations
+- description: Notification configuration
+  name: Notifications

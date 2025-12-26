@@ -37,6 +37,13 @@ export const serviceApi = {
   getServiceStatus: (id) => axiosInstance.get(`/services/${id}/status`),
 }
 
+// Bulk Service API
+export const bulkServiceApi = {
+  bulkCreate: (services) => axiosInstance.post('/services/bulk', { services }),
+  bulkUpdate: (services) => axiosInstance.put('/services/bulk', { services }),
+  bulkDelete: (ids) => axiosInstance.delete('/services/bulk', { data: { ids } }),
+}
+
 // Notification API
 export const notificationApi = {
   getConfig: () => axiosInstance.get('/notifications/config'),
@@ -46,6 +53,7 @@ export const notificationApi = {
 // Combined API object
 export const api = {
   ...serviceApi,
+  ...bulkServiceApi,
   getNotificationConfig: notificationApi.getConfig,
   updateNotificationConfig: notificationApi.updateConfig,
 }

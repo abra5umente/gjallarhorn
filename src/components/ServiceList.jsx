@@ -1,11 +1,25 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useServices } from '../context/ServiceContext'
 import StatusBadge from './StatusBadge'
 import LoadingSpinner from './LoadingSpinner'
+import BulkActionBar from './BulkActionBar'
+import BulkEditModal from './BulkEditModal'
 
 const ServiceList = () => {
-  const { services, loading, error, deleteService } = useServices()
+  const {
+    services,
+    loading,
+    error,
+    deleteService,
+    selectedIds,
+    toggleSelection,
+    selectAll,
+    clearSelection,
+    bulkDeleteServices,
+  } = useServices()
+
+  const [showBulkEdit, setShowBulkEdit] = useState(false)
 
   const handleDelete = async (id, name) => {
     if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
@@ -13,6 +27,16 @@ const ServiceList = () => {
         await deleteService(id)
       } catch (err) {
         alert(`Failed to delete service: ${err.message}`)
+      }
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (window.confirm(`Are you sure you want to delete ${selectedIds.size} services?`)) {
+      try {
+        await bulkDeleteServices(Array.from(selectedIds))
+      } catch (err) {
+        alert(`Failed to delete services: ${err.message}`)
       }
     }
   }
@@ -57,10 +81,22 @@ const ServiceList = () => {
     )
   }
 
+  const allSelected = services.length > 0 && selectedIds.size === services.length
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Monitored Services</h1>
+        <div className="flex items-center space-x-4">
+          <h1 className="text-2xl font-bold text-gray-900">Monitored Services</h1>
+          {services.length > 0 && (
+            <button
+              onClick={allSelected ? clearSelection : selectAll}
+              className="text-sm text-primary-600 hover:text-primary-700"
+            >
+              {allSelected ? 'Deselect All' : 'Select All'}
+            </button>
+          )}
+        </div>
         <Link to="/add" className="btn-primary">
           Add Service
         </Link>
@@ -68,8 +104,19 @@ const ServiceList = () => {
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {services.map((service) => (
-          <div key={service.id} className="card">
-            <div className="flex justify-between items-start mb-4">
+          <div
+            key={service.id}
+            className={`card relative ${selectedIds.has(service.id) ? 'ring-2 ring-primary-500' : ''}`}
+          >
+            <div className="absolute top-4 left-4">
+              <input
+                type="checkbox"
+                checked={selectedIds.has(service.id)}
+                onChange={() => toggleSelection(service.id)}
+                className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+            </div>
+            <div className="flex justify-between items-start mb-4 ml-6">
               <h3 className="text-lg font-semibold text-gray-900">{service.name}</h3>
               <StatusBadge status={service.status} />
             </div>
@@ -121,6 +168,16 @@ const ServiceList = () => {
           </div>
         ))}
       </div>
+
+      <BulkActionBar
+        onEdit={() => setShowBulkEdit(true)}
+        onDelete={handleBulkDelete}
+      />
+
+      <BulkEditModal
+        isOpen={showBulkEdit}
+        onClose={() => setShowBulkEdit(false)}
+      />
     </div>
   )
 }

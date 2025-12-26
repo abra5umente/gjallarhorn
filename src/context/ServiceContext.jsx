@@ -15,6 +15,7 @@ export const ServiceProvider = ({ children }) => {
   const [services, setServices] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [selectedIds, setSelectedIds] = useState(new Set())
 
   const fetchServices = async () => {
     try {
@@ -63,6 +64,50 @@ export const ServiceProvider = ({ children }) => {
     }
   }
 
+  // Selection functions
+  const toggleSelection = (id) => {
+    setSelectedIds(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      return newSet
+    })
+  }
+
+  const selectAll = () => {
+    setSelectedIds(new Set(services.map(s => s.id)))
+  }
+
+  const clearSelection = () => {
+    setSelectedIds(new Set())
+  }
+
+  // Bulk operations
+  const bulkUpdateServices = async (updates) => {
+    try {
+      await api.bulkUpdate(updates)
+      await fetchServices()
+      clearSelection()
+    } catch (err) {
+      setError(err.message)
+      throw err
+    }
+  }
+
+  const bulkDeleteServices = async (ids) => {
+    try {
+      await api.bulkDelete(ids)
+      await fetchServices()
+      clearSelection()
+    } catch (err) {
+      setError(err.message)
+      throw err
+    }
+  }
+
   useEffect(() => {
     fetchServices()
     
@@ -75,10 +120,16 @@ export const ServiceProvider = ({ children }) => {
     services,
     loading,
     error,
+    selectedIds,
     fetchServices,
     createService,
     updateService,
     deleteService,
+    toggleSelection,
+    selectAll,
+    clearSelection,
+    bulkUpdateServices,
+    bulkDeleteServices,
   }
 
   return (

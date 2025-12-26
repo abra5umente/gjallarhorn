@@ -26,6 +26,9 @@ WORKDIR /app
 # Install git for go modules
 RUN apk add --no-cache git
 
+# Install swag for API docs
+RUN go install github.com/swaggo/swag/cmd/swag@latest
+
 # Copy go mod files
 COPY go.mod go.sum ./
 
@@ -37,6 +40,9 @@ COPY . .
 
 # Copy built frontend from previous stage
 COPY --from=frontend-builder /app/frontend/dist ./dist
+
+# Generate Swagger docs
+RUN swag init
 
 # Build the application for the target platform
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -a -installsuffix cgo -o main .

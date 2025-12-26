@@ -4,6 +4,7 @@ import (
 	"embed"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -11,7 +12,23 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	echoSwagger "github.com/swaggo/echo-swagger"
+
+	_ "gjallarhorn/docs"
 )
+
+// @title Gjallarhorn API
+// @version 1.0
+// @description Uptime monitoring service API
+// @host localhost:8080
+// @BasePath /api
+
+// @tag.name Services
+// @tag.description Service monitoring operations
+// @tag.name Bulk Operations
+// @tag.description Bulk service operations with all-or-nothing semantics
+// @tag.name Notifications
+// @tag.description Notification configuration
 
 //go:embed dist/*
 var frontendFiles embed.FS
@@ -23,9 +40,23 @@ func main() {
 	// Initialize Echo
 	e := echo.New()
 
-	// Initialize validator
-	validator := validator.New()
-	e.Validator = &CustomValidator{validator: validator}
+	// Initialize validator with custom validations
+	v := validator.New()
+
+	// Register custom validator for HTTP/HTTPS URLs only
+	v.RegisterValidation("httpurl", func(fl validator.FieldLevel) bool {
+		urlStr := fl.Field().String()
+		if urlStr == "" {
+			return false
+		}
+		u, err := url.Parse(urlStr)
+		if err != nil {
+			return false
+		}
+		return u.Scheme == "http" || u.Scheme == "https"
+	})
+
+	e.Validator = &CustomValidator{validator: v}
 
 	// Middleware
 	e.Use(middleware.Logger())
@@ -50,10 +81,20 @@ func main() {
 	api.PUT("/services/:id", monitorService.UpdateService)
 	api.DELETE("/services/:id", monitorService.DeleteService)
 	api.GET("/services/:id/status", monitorService.GetServiceStatus)
+
+	// Bulk operations
+	api.POST("/services/bulk", monitorService.BulkCreateServices)
+	api.PUT("/services/bulk", monitorService.BulkUpdateServices)
+	api.DELETE("/services/bulk", monitorService.BulkDeleteServices)
+
+	// Notifications
 	api.POST("/notifications/config", notificationService.UpdateConfig)
 	api.GET("/notifications/config", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, notificationService.GetConfig())
 	})
+
+	// Swagger documentation
+	e.GET("/swagger/*", echoSwagger.WrapHandler)
 
 	// Serve frontend files with proper MIME types
 	e.GET("/*", func(c echo.Context) error {
