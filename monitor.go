@@ -40,11 +40,17 @@ type MonitorService struct {
 
 // NewMonitorService creates a new monitor service
 func NewMonitorService() *MonitorService {
+	// Allow skipping TLS verification via env var (for self-signed certs)
+	skipTLSVerify := os.Getenv("SKIP_TLS_VERIFY") == "true"
+	if skipTLSVerify {
+		log.Println("Warning: TLS certificate verification is disabled (SKIP_TLS_VERIFY=true)")
+	}
+
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, // For self-signed certificates
+				InsecureSkipVerify: skipTLSVerify,
 			},
 		},
 	}
@@ -74,6 +80,15 @@ func (m *MonitorService) saveServices() error {
 	}
 	m.mu.RUnlock()
 
+	return m.storage.SaveServices(services)
+}
+
+// saveServicesLocked saves services assuming the lock is already held
+func (m *MonitorService) saveServicesLocked() error {
+	services := make(map[string]*Service)
+	for k, v := range m.services {
+		services[k] = v
+	}
 	return m.storage.SaveServices(services)
 }
 
@@ -297,7 +312,10 @@ func (m *MonitorService) BulkCreateServices(c echo.Context) error {
 	m.mu.Unlock()
 
 	if err := m.saveServices(); err != nil {
-		log.Printf("Warning: Failed to save services to storage: %v", err)
+		log.Printf("Error: Failed to save services to storage: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Services created but failed to persist: " + err.Error(),
+		})
 	}
 
 	return c.JSON(http.StatusCreated, BulkOperationResponse{
@@ -345,9 +363,9 @@ func (m *MonitorService) BulkUpdateServices(c echo.Context) error {
 		})
 	}
 
-	// Apply updates atomically
-	updatedServices := make([]*Service, 0, len(req.Services))
+	// Apply updates atomically - hold lock through save to prevent race with checkService
 	m.mu.Lock()
+	updatedServices := make([]*Service, 0, len(req.Services))
 	now := time.Now()
 	for _, svcReq := range req.Services {
 		service := m.services[svcReq.ID]
@@ -357,11 +375,16 @@ func (m *MonitorService) BulkUpdateServices(c echo.Context) error {
 		service.UpdatedAt = now
 		updatedServices = append(updatedServices, service)
 	}
-	m.mu.Unlock()
 
-	if err := m.saveServices(); err != nil {
-		log.Printf("Warning: Failed to save services to storage: %v", err)
+	// Save while still holding lock to prevent race conditions
+	if err := m.saveServicesLocked(); err != nil {
+		m.mu.Unlock()
+		log.Printf("Error: Failed to save services to storage: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Services updated but failed to persist: " + err.Error(),
+		})
 	}
+	m.mu.Unlock()
 
 	return c.JSON(http.StatusOK, BulkOperationResponse{
 		Success:  true,
@@ -408,16 +431,20 @@ func (m *MonitorService) BulkDeleteServices(c echo.Context) error {
 		})
 	}
 
-	// Delete atomically
+	// Delete atomically - hold lock through save
 	m.mu.Lock()
 	for _, id := range req.IDs {
 		delete(m.services, id)
 	}
-	m.mu.Unlock()
 
-	if err := m.saveServices(); err != nil {
-		log.Printf("Warning: Failed to save services to storage: %v", err)
+	if err := m.saveServicesLocked(); err != nil {
+		m.mu.Unlock()
+		log.Printf("Error: Failed to save services to storage: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Services deleted but failed to persist: " + err.Error(),
+		})
 	}
+	m.mu.Unlock()
 
 	return c.JSON(http.StatusOK, BulkOperationResponse{
 		Success: true,
@@ -446,6 +473,9 @@ func (m *MonitorService) StartMonitoring(notificationService *NotificationServic
 	}
 }
 
+// maxConcurrentChecks limits concurrent health check goroutines
+const maxConcurrentChecks = 10
+
 // checkAllServices checks all services for their health
 func (m *MonitorService) checkAllServices(notificationService *NotificationService) {
 	m.mu.RLock()
@@ -455,9 +485,21 @@ func (m *MonitorService) checkAllServices(notificationService *NotificationServi
 	}
 	m.mu.RUnlock()
 
+	// Use semaphore to limit concurrent checks
+	sem := make(chan struct{}, maxConcurrentChecks)
+	var wg sync.WaitGroup
+
 	for _, service := range services {
-		go m.checkService(service, notificationService)
+		wg.Add(1)
+		sem <- struct{}{} // Acquire semaphore
+		go func(svc *Service) {
+			defer wg.Done()
+			defer func() { <-sem }() // Release semaphore
+			m.checkService(svc, notificationService)
+		}(service)
 	}
+
+	wg.Wait()
 }
 
 // checkService performs a health check on a single service
